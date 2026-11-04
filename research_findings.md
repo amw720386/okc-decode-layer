@@ -7,3 +7,10 @@ Chord (H200 W4A16, https://github.com/novitalabs/chord docs/optimizations.md, de
 Recoverable boundary time ~1-4% at batch 1. PDL: trigger cudaTriggerProgrammaticLaunchCompletion() right after producer issues loads (not after they complete) saved ~2.1us/layer in arXiv 2611.00495; successor does independent loads (weights) before cudaGridDependencySynchronize(). Suggest %globaltimer/%smid timestamps comparing no PDL / current / earliest-safe PDL. https://tie-pilot-qxw.github.io/blog/reconstructing-a-megakernel-with-pdl/
 ## P4 compression
 Gaussian BF16 entropy ~10.5 bits. ZipServ TCA-TBE (https://github.com/HPMLL/ZipServ_ASPLOS26): 8b sign+mantissa + 3-bit exponent code (7 common + escape), exceptions raw; Gaussian -> 11.20 bits; 7 exps + escape with separate sign covers 97.5%. Best-case layer gain at batch 1 ~3.1% at 11.2 bits; 12-bit kernel runs ~2.74-3.0 TB/s eff., 11.2-bit needs >=2.56-2.8 TB/s to break even. NWC decoder https://github.com/parda21/NWC.
+## Round 3 synthesis (Nov 4 00:45 ET) — code-vs-tactics + Codex measurements
+- WGMMA serialization: NOT present (Codex SASS audit: moe_fused 512 HGMMA, wait-group-1 pipelined, no C7512; ChatGPT code review agrees; the __trap is only under disabled OKC_TINY).
+- Already in our MoE: weights-on-M/tokens-on-N (m64n8k16), mma.sync skinny path (mma_bf16/fat_compute), producer warps, 3-stage ring, per-tile FC1->FC2 counters, stream-K, no grid barrier. Chord-style swap is partly present.
+- Codex task5 final: best stacked tuning +0.08% (CI [1.0007,1.0009]) -> not worth a submit alone.
+- Codex task6: PDL earlier-trigger +0.05%; fixed ring-slot specialization -1.6% (rejected); forum t/114,t/125 negatives confirmed.
+- Remaining ChatGPT patch ideas: WGS_DEPTH=2 (two outstanding WGMMA groups, wg_wait<2>, 3 A-banks) 0-1.5% medium-high risk; PDL_AFTER_FC1 0-0.8%; T=32 moe_helper0 skinny vs B4 0-1%.
+- Open question for all threads: we need ~+1.1% whole-layer. Where is the remaining gap to 2.4-2.55x leaders if MoE/WGMMA basics are already done? Attention is ~50% at B16/B32 full shapes; dense GEMVs ~45% at B1.
